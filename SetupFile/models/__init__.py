@@ -1,37 +1,62 @@
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy_mixins import AllFeaturesMixin
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 import configparser
 import os
 
+import sqlalchemy as sa
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_mixin, declared_attr, registry
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy_mixins import AllFeaturesMixin
+
+
 class AlembicNotFoundError(Exception):
     pass
+
 
 class SqlalchemyUrlEmpty(Exception):
     pass
 
 
-Base = declarative_base()
+# registry
+mapper_registry = registry()
+Base = mapper_registry.generate_base()
 
-class BaseModel(Base, AllFeaturesMixin):
+
+# Mixin
+@declarative_mixin
+class BaseMixin:
+    @declared_attr
+    def __tablename__(cls):
+        return cls.__name__.lower()
+
+    # __table_args__ = {"mysql_engine": "InnoDB"}
+    __table_args__ = {"keep_existing": True}
+    __mapper_args__ = {"always_refresh": True}
+    id = sa.Column(sa.Integer, primary_key=True)
+
+
+class BaseModel(Base, BaseMixin, AllFeaturesMixin):
     __abstract__ = True
 
 
-
+# For using sqlalchemy-mixins
 CURRENT_DIR = os.path.dirname(__file__)
-alembic_path = os.path.abspath(CURRENT_DIR + '/../alembic.ini')
+alembic_path = os.path.abspath(CURRENT_DIR + "/../alembic.ini")
 config = configparser.ConfigParser()
 config.read(alembic_path)
 
 if not config:
     raise AlembicNotFoundError("File: [alembic.ini] not found! Please check your file path.")
 
-sqlString = config.get('alembic', 'sqlalchemy.url')
-if not sqlString:
+db_string = config.get("alembic", "sqlalchemy.url")
+if not db_string:
     raise SqlalchemyUrlEmpty("[alembic] sqlalchemy.url not have value!")
 
-db = create_engine(sqlString, echo=True)
-session = sessionmaker(bind=db)
+execution_options = {"isolation_level": "READ UNCOMMITTED", "logging_token": "SqlalchemyMixin"}
+engine = create_engine(db_string, echo=True, future=True)
+Session = scoped_session(
+    sessionmaker(
+        bind=engine.execution_options(**execution_options), autocommit=True
+    )
+)
+BaseModel.set_session(Session())
 
-BaseModel.set_session(session())

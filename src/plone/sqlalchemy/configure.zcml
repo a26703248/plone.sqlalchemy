@@ -41,6 +41,7 @@
       />
 
   <!-- -*- extra stuff goes here -*- -->
+
   <include package=".configlet" />
 
 </configure>
